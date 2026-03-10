@@ -168,6 +168,9 @@ grafana:
 
 With that configured, the HTTPRoute needs no filters at all — just forward the request as-is:
 
+<details>
+<summary>HTTPRoute manifests</summary>
+
 ```yaml
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -207,6 +210,20 @@ spec:
           port: 9090
 ```
 
+</details>
+
+### Challenge 3: Regex Path Matching Broken
+
+During testing, some routes required `RegularExpression` path matching in HTTPRoute. The controller was silently using glob matching instead, causing validation errors like:
+
+```
+Condition value '/some/path/[a-z]+/subresource*' contains a character that is not valid.
+```
+
+The root cause: the controller was sending `values` to the ALB API instead of `regexValues` for regex path conditions — so regex rules were never actually applied.
+
+There was no workaround. My colleague filed [this issue](https://github.com/kubernetes-sigs/aws-load-balancer-controller/issues/4573), and the fix landed in **v3.1.0** very quickly. This is where an active community really matters.
+
 ---
 
 ## Part 6: Implementation Walkthrough
@@ -236,7 +253,7 @@ This reads your existing Ingress objects and outputs equivalent `Gateway` and `H
 
 ## Conclusion
 
-With Gateway API in place and a clear role hierarchy, I find it's really clean. And we also can visually see all resources, health check from AWS console, which make debug so easy. 
+With Gateway API in place and a clear role hierarchy, I find it's really clean. And we also can visually see all resources, health check from AWS console, which make debug so easy.
 
 If you're on AWS and don't have complex NGINX customizations, this migration is the right call. Just go in with eyes open and test out.
 
