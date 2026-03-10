@@ -72,8 +72,8 @@ export default async function Home() {
           {[
             { label: 'Cloud',      icons: 'aws,gcp',              src: null, desc: 'AWS · GCP (learning)' },
             { label: 'Containers', icons: 'kubernetes,docker',    src: null, desc: 'Kubernetes · Docker' },
-            { label: 'IaC',        icons: 'terraform,cloudformation', src: null, desc: 'Terraform · CloudFormation' },
-            { label: 'CI/CD',      icons: 'github,githubactions,jenkins', src: null, desc: 'GitHub Actions · Jenkins' },
+            { label: 'IaC',        icons: 'terraform', src: null, desc: 'Terraform · CloudFormation' },
+            { label: 'CI/CD',      icons: 'github,jenkins', src: null, desc: 'GitHub · Jenkins' },
             { label: 'Scripting',  icons: 'bash,py',              src: null, desc: 'Bash · Python' },
             { label: 'OS',         icons: 'linux,windows',        src: null, desc: 'Linux · Windows' },
             { label: 'AI / GenAI', icons: null, src: '/bedrock.svg', desc: 'AWS Bedrock · LLMs' },
