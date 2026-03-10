@@ -8,7 +8,7 @@
     font-size: 17px;
   }
   body {
-    font-family: var(--font-inter), Inter, sans-serif;
+    font-family: var(--font-raleway), Raleway, Helvetica, sans-serif;
     background-color: #f4faf6;
     color: #374151;
     -webkit-font-smoothing: antialiased;

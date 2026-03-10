@@ -8,7 +8,7 @@ interface Props {
 
 export default function MDXContent({ source }: Props) {
   return (
-    <article className="prose dark:prose-invert max-w-none
+    <article className="prose dark:prose-invert max-w-none [font-family:var(--font-merriweather),Georgia,Times,serif]
       prose-headings:text-[#111827] dark:prose-headings:text-[#f1f5f9] prose-headings:font-semibold prose-headings:tracking-tight
       prose-p:text-[#374151] dark:prose-p:text-[#cbd5e1] prose-p:leading-relaxed
       prose-a:text-[#2563eb] dark:prose-a:text-[#60a5fa] prose-a:no-underline hover:prose-a:underline

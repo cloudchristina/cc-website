@@ -1,10 +1,11 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
+import { Merriweather, Raleway } from 'next/font/google'
 import './globals.css'
 import Providers from '@/components/Providers'
 import Header from '@/components/Header'
 
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
+const merriweather = Merriweather({ subsets: ['latin'], weight: ['400', '700'], variable: '--font-merriweather' })
+const raleway = Raleway({ subsets: ['latin'], variable: '--font-raleway' })
 
 export const metadata: Metadata = {
   title: { default: 'cloudchristina', template: '%s | cloudchristina' },
@@ -13,7 +14,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning className={inter.variable}>
+    <html lang="en" suppressHydrationWarning className={`${merriweather.variable} ${raleway.variable}`}>
       <body>
         <Providers>
           <Header />
