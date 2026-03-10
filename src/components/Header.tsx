@@ -3,7 +3,7 @@ import ThemeToggle from './ThemeToggle'
 import SearchModal from './SearchModal'
 
 const navLinks = [
-  { href: '/', label: 'Home' },
+  { href: '/', label: 'Home', mobileHidden: true },
   { href: '/blogs', label: 'Blogs' },
   { href: '/projects', label: 'Projects' },
   { href: '/about', label: 'About' },
@@ -20,12 +20,12 @@ export default function Header() {
         >
           Christina Chen
         </Link>
-        <nav className="flex items-center gap-5">
+        <nav className="flex items-center gap-3 sm:gap-5">
           {navLinks.map(link => (
             <Link
               key={link.href}
               href={link.href}
-              className="text-sm text-[#6b7280] dark:text-[#94a3b8] hover:text-[#111827] dark:hover:text-[#f1f5f9] transition-colors font-medium"
+              className={`text-sm text-[#6b7280] dark:text-[#94a3b8] hover:text-[#111827] dark:hover:text-[#f1f5f9] transition-colors font-medium${link.mobileHidden ? ' hidden sm:inline' : ''}`}
             >
               {link.label}
             </Link>
