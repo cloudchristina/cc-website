@@ -1,0 +1,180 @@
+---
+title: "Headers, Bearer Tokens, and JWTs Explained"
+date: "2026-10-05"
+description: "Follow an Entra-authenticated user through a Copilot Studio agent and tool call to understand headers, JWTs, delegated scopes, and token exchange."
+tags: [http, authentication, jwt, entra-id, copilot-studio, first-principles]
+published: true
+---
+
+My goal: manage users in **Microsoft Entra ID**, configure a **Copilot Studio agent**, and let its tools access data **on the signed-in user's behalf**.
+
+One example throughout: Connie asks the agent, **“Show my project documents.”** The agent should retrieve only documents Connie is allowed to read.
+
+## 1. Why: preserve the user's access boundary
+
+| Step | What it establishes | What it does not establish |
+|---|---|---|
+| Maker signs into Copilot Studio | Permission to build/manage an agent | Each end user's downstream data access |
+| Register/configure the agent and integrations | Application identity, API permissions, authentication settings | Automatic consent or access to every resource |
+| End user authenticates to the published agent | User identity for the conversation | A universal token for all tools |
+| Tool authenticates with end-user credentials | Delegated access to the target service | Permission to read every document |
+
+Configure tools for **user authentication** when access must follow the caller. Maker-provided connections instead use the maker's access. Exact setup depends on the channel and connector. [Tool authentication](https://learn.microsoft.com/en-us/microsoft-copilot-studio/configure-enduser-authentication) · [Agent identities and registration](https://learn.microsoft.com/en-us/microsoft-copilot-studio/govern-agents-identities-overview)
+
+## 2. What: header, Bearer, JWT
+
+Illustrative tool request over HTTPS; `ACCESS_TOKEN` is a placeholder:
+
+```http
+GET /documents HTTP/1.1
+Host: data.example.com
+Accept: application/json
+Authorization: Bearer ACCESS_TOKEN
+```
+
+**Diagram colors:** blue = request/service, purple = token, amber = validation, green = permitted result.
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Arial, sans-serif", "fontSize": "16px", "primaryColor": "#e0f2fe", "primaryTextColor": "#0c4a6e", "primaryBorderColor": "#0284c7", "lineColor": "#64748b", "secondaryColor": "#ede9fe", "tertiaryColor": "#f0fdf4", "actorBkg": "#e0f2fe", "actorBorder": "#0284c7", "actorTextColor": "#0c4a6e", "signalColor": "#475569", "signalTextColor": "#334155", "noteBkgColor": "#fef3c7", "noteTextColor": "#78350f"}, "flowchart": {"curve": "basis", "nodeSpacing": 30, "rankSpacing": 40, "padding": 16}, "sequence": {"wrap": true, "actorMargin": 30, "messageMargin": 40, "width": 150}}}%%
+flowchart TD
+  R["Authorization: Bearer ACCESS_TOKEN"] --> H["HTTP header<br/>Where the credential travels"]
+  R --> B["Bearer scheme<br/>Possession of a valid token suffices"]
+  R --> T["Access token<br/>Credential for this API"]
+  T --> J["Signed JWT<br/>Claims + verifiable signature"]
+  T --> O["Opaque token<br/>Meaning obtained through a trusted lookup"]
+  classDef request fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e,stroke-width:2px,rx:12,ry:12
+  classDef token fill:#ede9fe,stroke:#7c3aed,color:#4c1d95,stroke-width:2px,rx:12,ry:12
+  classDef check fill:#fef3c7,stroke:#d97706,color:#78350f,stroke-width:2px
+  classDef success fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:2px,rx:12,ry:12
+  class R,H request
+  class B,T,J,O token
+```
+
+| Term | Meaning |
+|---|---|
+| Header | Named message metadata; `Authorization` carries credentials, `Accept` states a response preference |
+| Bearer | No separate proof of a cryptographic key; the receiver still validates token and permissions |
+| JWT | JSON Web Token: a claims format, distinct from how it is transported |
+| Signed JWT | Usually `header.payload.signature`; readable encoding, not encryption |
+
+A JWT can be a bearer token; a bearer token need not be a JWT. HTTPS protects transport. [HTTP](https://httpwg.org/specs/rfc9110.html#fields) · [Bearer](https://www.rfc-editor.org/rfc/rfc6750#section-1.2) · [JWT](https://www.rfc-editor.org/rfc/rfc7519)
+
+## 3. How: carry user context, acquire the right token
+
+**Preserve delegation through the chain; do not blindly forward the same token to every service.** Each resource validates that the token's audience (`aud`) identifies that resource.
+
+This is an illustrative **custom tool API → downstream data API** architecture using Entra's On-Behalf-Of (OBO) flow. It is not a claim that every Copilot Studio connector uses this exact sequence.
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Arial, sans-serif", "fontSize": "16px", "primaryColor": "#e0f2fe", "primaryTextColor": "#0c4a6e", "primaryBorderColor": "#0284c7", "lineColor": "#64748b", "secondaryColor": "#ede9fe", "tertiaryColor": "#f0fdf4", "actorBkg": "#e0f2fe", "actorBorder": "#0284c7", "actorTextColor": "#0c4a6e", "signalColor": "#475569", "signalTextColor": "#334155", "noteBkgColor": "#fef3c7", "noteTextColor": "#78350f"}, "flowchart": {"curve": "basis", "nodeSpacing": 30, "rankSpacing": 40, "padding": 16}, "sequence": {"wrap": true, "actorMargin": 30, "messageMargin": 40, "width": 150}}}%%
+sequenceDiagram
+  participant U as Connie
+  participant C as Copilot agent / connection
+  participant E as Entra ID
+  participant T as Custom tool API
+  participant D as Data API
+  U->>C: Authenticate and request project documents
+  C->>E: Obtain delegated token for tool API
+  E-->>C: Token A: audience = tool API
+  C->>T: Tool call + Bearer token A
+  T->>T: Validate token A
+  T->>E: OBO: token A + tool app authentication + data scopes
+  E-->>T: Token B: audience = data API
+  T->>D: GET /documents + Bearer token B
+  D->>D: Validate token B and Connie's document access
+  D-->>T: Permitted documents
+  T-->>C: Tool result
+  C-->>U: Answer based on permitted data
+```
+
+| Situation | Correct token handling |
+|---|---|
+| Connector calls the data API directly | Acquire a delegated access token for that data API |
+| Custom tool API calls a different data API | Validate its incoming token; acquire a downstream token through configured OBO |
+| Token is intended for another API | Reject it; a valid signature does not fix the wrong audience |
+
+OBO requires suitable app configuration, consent, and a user access token intended for the middle tier. An app-only token cannot become a user-delegated token through standard OBO. [Entra OBO flow](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-on-behalf-of-flow)
+
+Copilot Studio conversation authentication and tool connections are separate configuration concerns. `User.AccessToken` is available with **Authenticate manually**, not **Authenticate with Microsoft**; its presence does not make it valid for an arbitrary API. Use the supported authentication path for the chosen channel/tool. [Agent authentication options](https://learn.microsoft.com/en-us/microsoft-copilot-studio/configuration-end-user-authentication)
+
+## 4. Example: scope is only part of the permission check
+
+Scopes are defined by the resource API and requested/consented through Entra. A user's group membership or data access is not the same thing as an OAuth scope.
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Arial, sans-serif", "fontSize": "16px", "primaryColor": "#e0f2fe", "primaryTextColor": "#0c4a6e", "primaryBorderColor": "#0284c7", "lineColor": "#64748b", "secondaryColor": "#ede9fe", "tertiaryColor": "#f0fdf4", "actorBkg": "#e0f2fe", "actorBorder": "#0284c7", "actorTextColor": "#0c4a6e", "signalColor": "#475569", "signalTextColor": "#334155", "noteBkgColor": "#fef3c7", "noteTextColor": "#78350f"}, "flowchart": {"curve": "basis", "nodeSpacing": 30, "rankSpacing": 40, "padding": 16}, "sequence": {"wrap": true, "actorMargin": 30, "messageMargin": 40, "width": 150}}}%%
+flowchart TD
+  T["Data API receives token B"] --> V["Validate trusted signature,<br/>issuer, audience and lifetime"]
+  V --> S["Check delegated scope<br/>Documents.Read"]
+  S --> P["Apply resource permissions<br/>Which documents can Connie read?"]
+  P --> A["Return only allowed documents"]
+
+  classDef request fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e,stroke-width:2px,rx:12,ry:12
+  classDef token fill:#ede9fe,stroke:#7c3aed,color:#4c1d95,stroke-width:2px,rx:12,ry:12
+  classDef check fill:#fef3c7,stroke:#d97706,color:#78350f,stroke-width:2px
+  classDef success fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:2px,rx:12,ry:12
+  class T token
+  class V,S,P check
+  class A success
+```
+
+Illustrative decoded claims for **our own custom data API**, not a literal Entra token:
+
+```json
+{
+  "aud": "DATA_API_CLIENT_ID",
+  "iss": "https://login.microsoftonline.com/TENANT_ID/v2.0",
+  "tid": "TENANT_ID",
+  "oid": "CONNIE_OBJECT_ID",
+  "scp": "Documents.Read",
+  "exp": 1791154800
+}
+```
+
+| Claim | Question answered |
+|---|---|
+| `aud` | Which API may accept this token? |
+| `iss` / `tid` | Which issuer and tenant issued it? |
+| `oid` + `tid` | Which tenant user is represented? |
+| `scp` | Which delegated scopes were granted? Entra uses `scp`, not a generic `scope` claim |
+| `exp` | When does it expire? Unix time in seconds |
+
+Token format and claims depend on resource/version. APIs validate tokens intended for themselves; clients should treat other APIs' tokens as opaque. [Entra claims reference](https://learn.microsoft.com/en-us/entra/identity-platform/access-token-claims-reference)
+
+| Boundary | Owner |
+|---|---|
+| Identity, token issuance, consent and identity policies | Entra ID |
+| Requested API scopes and configured delegated permissions | API definition + client configuration + consent |
+| Record/document access and business rules | Data service or application authorization |
+| Tool choice and response generation | Agent; it must not override the data service's checks |
+
+Delegated access is constrained by both granted application permissions and the user's resource access, with policy checks also applying. A read scope grants an operation, not ownership of all data. [Permissions and consent](https://learn.microsoft.com/en-us/entra/identity-platform/permissions-consent-overview)
+
+## 5. Analogy: a visitor badge and room passes
+
+| In a building | In our agent flow |
+|---|---|
+| Reception verifies Connie | Entra authenticates the user |
+| Agreed place to present a pass | HTTP `Authorization` header |
+| Holder of a valid pass can use it | Bearer rule |
+| Pass details with a verifiable seal | Signed JWT |
+| Exchange a reception pass for a room-specific pass | Acquire a token for a new API audience |
+| Room guard checks permitted activities and rooms | API checks scope and resource permissions |
+
+## Related terms to recognize
+
+| Term | Connection to this story |
+|---|---|
+| Authentication / authorization | Establish identity / decide allowed actions |
+| App registration / service principal | Application definition / its identity in a tenant; distinct from the user |
+| Delegated / application permissions | Act with a signed-in user / act as an application without a user |
+| OAuth 2.0 / OIDC | API authorization / an identity layer for user sign-in |
+| Access / ID / refresh token | API credential / sign-in information for the client / obtain new access tokens |
+| OBO | Middle tier obtains a downstream token while preserving user delegation |
+| `kid` / JWKS | Key identifier / key set from a trusted issuer used for signature verification |
+| `Content-Type` / `WWW-Authenticate` | Body format / authentication challenge from an API |
+| Cookie / session | Browser state transport / application state connecting requests; separate from JWT format |
+
+**Keep tokens in the authentication layer, out of prompts and logs.** Signed payloads are readable; stolen valid bearer tokens can be replayed. Logout or refresh-token revocation does not automatically invalidate every existing access token.
+
+Adapted from the supplied *Bearer Token vs JWT* artifact and the Entra + Copilot Studio scenario above.
